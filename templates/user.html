@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <div class="row justify-content-md-center">
+        <div class="col-md-4">
+            <h2 class="join-message">{{user.username}}</h2>
+        </div>
+    </div>
+    <div class="row justify-content-md-center">
+        <div class="col-md-5">
+            <h3>User Details</h3>
+            <ul>
+                <li>Email: {{user.email}}</li>
+                <li>Birth Date: {{user.birth_dt}}</li>
+                <li>Gender: {{user.gender}}</li>
+                <li>Height: {{user.height}}</li>
+            </ul>
+            <a href="/users/{{user.id}}/usersetup">Edit</a>
+        </div>
+    </div>
+{% endblock %}

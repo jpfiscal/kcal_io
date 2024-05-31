@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-md-center">
+    <div class="col-md-7 col-lg-5">
+      <h2 class="join-message">Link Fitbit Account</h2>
+        <ul>
+            <li><b>Fitbit User ID:</b> {{fitbit_account.fitbit_user_id}}</li>
+            <li><b>Token:</b> {{fitbit_account.token}}</li>
+            <li><b>Refresh Token:</b> {{fitbit_account.refresh_token}}</li>
+            <li><b>Token Expiry:</b> {{fitbit_account.expiry_dt}}</li>
+        </ul>
+        <!-- Figure out how to write fitbit access data to db once returning-->
+        <form action="/">
+            <button class="btn btn-primary btn-block btn-lg">Finish Setup</button>
+        </form>
+    </div>
+  </div>
+{% endblock %}
