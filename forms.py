@@ -1,8 +1,9 @@
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, DateField, SelectField, DecimalField, IntegerField, FileField
-from wtforms.validators import DataRequired, Email, Length, NumberRange, ValidationError
+from wtforms.validators import DataRequired, Email, Length, NumberRange, ValidationError, Optional
 from flask_wtf.file import FileField, FileAllowed
 from datetime import datetime
+from models import Activity
 
 
 class LoginForm(FlaskForm):
@@ -42,31 +43,36 @@ class ManualMealInputForm(FlaskForm):
     """Form used to manually input user's meals"""
 
     meal_name = StringField('Meal Name', validators=[DataRequired()])
+    meal_date = DateField('Date', validators=[DataRequired()], default=datetime.utcnow())
     meal_lbl = SelectField('Meal', choices=['Breakfast', 'Lunch', 'Dinner', 'Morning Snack', 'Afternoon Snack', 'Evening Snack'], validators=[DataRequired()])
-    weight = DecimalField('Weight (in grams)', places=2, rounding=None, use_locale=False, validators=[DataRequired()])
+    # weight = DecimalField('Weight (in grams)', places=2, rounding=None, use_locale=False, validators=[Optional()])
     total_kcal = IntegerField('Total kCal in meal', validators=[DataRequired()])
-    carbs = DecimalField('Carbs (g)', places=2, rounding=None, use_locale=False)
-    fat = DecimalField('Fat (g)', places=2, rounding=None, use_locale=False)
-    protien = DecimalField('Proien (g)', places=2, rounding=None, use_locale=False)
+    carbs = DecimalField('Carbs (g)', places=2, rounding=None, use_locale=False, validators=[Optional()])
+    fat = DecimalField('Fat (g)', places=2, rounding=None, use_locale=False, validators=[Optional()])
+    protein = DecimalField('Protein (g)', places=2, rounding=None, use_locale=False, validators=[Optional()])
 
 class MealPhotoForm(FlaskForm):
     """Form used to manually input user's meals"""
 
     meal_photo = FileField('Meal Photo', validators=[FileAllowed(['jpg','png','HEIC'], 'Images only'), DataRequired()])
-    weight = DecimalField('Weight (in grams)', places=2, rounding=None, use_locale=False)
+    meal_date = DateField('Date', validators=[DataRequired()], default=datetime.utcnow())
+    meal_lbl = SelectField('Meal', choices=['Breakfast', 'Lunch', 'Dinner', 'Morning Snack', 'Afternoon Snack', 'Evening Snack'], validators=[DataRequired()])
+    # weight = DecimalField('Weight (in grams)', places=2, rounding=None, use_locale=False)
 
 class EditMealEstimateForm(FlaskForm):
     """Once GPT4 returns the kcal and macronutrient estiamte, users can edit the returned data"""
 
     meal_name = StringField('Meal Name', validators=[DataRequired()])
-    weight = DecimalField('Weight (in grams)', places=2, rounding=None, use_locale=False, validators=[DataRequired()])
+    date = DateField('Date', validators=[DataRequired()], default=datetime.utcnow())
+    # weight = DecimalField('Weight (in grams)', places=2, rounding=None, use_locale=False, validators=[DataRequired()])
     total_kcal = IntegerField('Total kCal in meal', places=2, rounding=None, use_locale=False, validators=[DataRequired()])
     carbs = DecimalField('Carbs (g)', places=2, rounding=None, use_locale=False)
     fat = DecimalField('Fat (g)', places=2, rounding=None, use_locale=False)
-    protien = DecimalField('Proien (g)', places=2, rounding=None, use_locale=False)
+    protein = DecimalField('Protein (g)', places=2, rounding=None, use_locale=False)
 
 class ManualActivityInputForm(FlaskForm):
-    exercise_name = StringField('Exercise Name', validators=[DataRequired()])
+    activity_nm = SelectField('Exercise Name', validators=[DataRequired()])
+    activity_date = DateField('Date', validators=[DataRequired()], default=datetime.utcnow())
     duration = DecimalField('Exercise Duration (mins)', places=2, rounding=None, use_locale=False, validators=[NumberRange(min=0, message = 'Cannot be a negative number')])
     kcal_out = DecimalField('Kcals Burnt', places=2, rounding=None, use_locale=False, validators=[NumberRange(min=0, message = 'Cannot be a negative number')])
 

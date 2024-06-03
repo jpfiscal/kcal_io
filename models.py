@@ -1,8 +1,9 @@
 from flask_bcrypt import Bcrypt
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import func
 from decimal import Decimal
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 bcrypt = Bcrypt()
 db = SQLAlchemy()
@@ -310,7 +311,7 @@ class Kcal_in(db.Model):
         nullable=False
     )
 
-    meal_time = db.Column(
+    meal_date = db.Column(
         db.DateTime,
         nullable=False,
         default=datetime.utcnow()
@@ -355,6 +356,20 @@ class Kcal_in(db.Model):
 
     eats = db.relationship('User')
 
+    @staticmethod
+    def get_today_kcal_in_total(user_id):
+        today = datetime.utcnow().date()
+
+        total_kcal_in = db.session.query(func.sum(Kcal_in.kcal)).filter(
+            Kcal_in.user_id == user_id,
+            Kcal_in.meal_date >= today,
+            Kcal_in.meal_date < today + timedelta(days=1)
+        ).scalar()
+        print(f"today: {today}")
+        print(f"+ 1 day: {today + timedelta(days=1)}")
+        print(f"total_kcal_in: {total_kcal_in}")
+        return total_kcal_in or 0
+
 class Kcal_out(db.Model):
     """Records all activies or Calories that the users burnt OUT of their body"""
     __tablename__ = 'kcal_out'
@@ -369,6 +384,12 @@ class Kcal_out(db.Model):
         db.ForeignKey('users.id', ondelete='cascade')
     )
 
+    activity_date = db.Column(
+        db.DateTime,
+        nullable = False,
+        default=datetime.utcnow()
+    )
+
     activity_id = db.Column(
         db.Integer,
         db.ForeignKey('activity.id')
@@ -381,7 +402,7 @@ class Kcal_out(db.Model):
 
     duration = db.Column(
         db.Numeric(6,2),
-        nullable=False
+        nullable=True
     )
 
     is_auto = db.Column(
@@ -403,6 +424,18 @@ class Kcal_out(db.Model):
 
     burns = db.relationship('User')
     activity = db.relationship('Activity')
+
+    @staticmethod
+    def get_today_kcal_out_total(user_id):
+        today = datetime.utcnow().date()
+
+        total_kcal_out = db.session.query(func.sum(Kcal_out.kcal_out)).filter(
+            Kcal_out.user_id == user_id,
+            Kcal_out.activity_date >= today,
+            Kcal_out.activity_date < today + timedelta(days=1)
+        ).scalar()
+
+        return total_kcal_out or 0
 
 class Activity(db.Model):
     """Reference table of all activities in the system"""

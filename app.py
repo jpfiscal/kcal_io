@@ -1,28 +1,36 @@
 import os
 
-from flask import Flask, render_template, request, flash, redirect, session, g
+from flask import Flask, render_template, request, flash, redirect, session, g, jsonify
 from flask_debugtoolbar import DebugToolbarExtension
+from flask_migrate import Migrate
 from sqlalchemy.exc import IntegrityError
 import base64
 import hashlib
 import requests
 from datetime import datetime, timedelta
 
-from forms import UserAddForm, LoginForm, UserDetailsForm, BodyWeightForm, ManualMealInputForm, MealPhotoForm
+from forms import UserAddForm, LoginForm, UserDetailsForm, BodyWeightForm, ManualMealInputForm, MealPhotoForm, ManualActivityInputForm
 from models import db, connect_db, User, User_Weight, FitBit, Kcal_in, Kcal_out, Activity
 
 CURR_USER_KEY = "curr_user"
 
 app = Flask(__name__)
 
+if __name__ == "__main__":
+    app.run(debug=True)
+
 app.config['SQLALCHEMY_DATABASE_URI'] = (
     os.environ.get('DATABASE_URL', 'postgresql:///kcalio'))
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ECHO'] = False
+
+migrate = Migrate(app,db)
+
 app.config['DEBUG_TB_INTERCEPT_REDIRECTS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY',"k4ch1_su1TMatchaW8CH")
 app.config['DEBUG'] = True
+
 toolbar = DebugToolbarExtension(app)
 
 connect_db(app)
@@ -53,10 +61,46 @@ def homepage():
     """
 
     if g.user:
-        return render_template('home.html')
+        today_kcal_out = Kcal_out.get_today_kcal_out_total(g.user.id)
+        today_kcal_in = Kcal_in.get_today_kcal_in_total(g.user.id)
+        return render_template(
+            'home.html', 
+            today_kcal_in = today_kcal_in, 
+            today_kcal_out = today_kcal_out)
     else:
         return redirect('/login')
     
+@app.route('/wtHistoryData')
+def wtHistoryData():
+    """Pull and prepare weight history data for the user's home screen's line graph"""
+    user_id = g.user.id
+    wt_data = db.session.query(User_Weight.wt, User_Weight.wt_dt).filter_by(
+        user_id=user_id
+    ).order_by(User_Weight.wt_dt.asc()).all()
+    wt_data_list = [{'wt': float(wt), 'wt_dt': wt_dt.strftime("%Y-%m-%d")} for wt, wt_dt in wt_data]
+    return jsonify(wt_data_list)
+
+@app.route('/kcalSummaryData')
+def kcalSummaryData():
+    """Pull and prepare KCAL IN vs. KCAL OUT history data for the user's home 
+    screen's multi-bar graph"""
+    user_id = g.user.id
+    kcal_data = db.session.query(Kcal_out.kcal_out,
+                                Kcal_out.activity_date,
+                                Kcal_in.kcal, 
+                                Kcal_in.meal_date).join(Kcal_in).filter(
+                                    Kcal_in.meal_date == Kcal_out.activity_date).filter_byA(
+                                        user_id = user_id).order_by(Kcal_out.activity_date.asc()).all()
+
+    print(f"kcal_data: {kcal_data}")
+    kcal_data_list = [{'kcal_in': float(kcal),
+                        'kcal_out': float(kcal_out),
+                        'meal_dt': meal_dt.strftime("%Y-%m-%d"), 
+                        'activity_dt' : activity_dt.strftime("%Y-%m-%d")} for kcal_out, activity_dt, kcal, meal_dt in kcal_data]
+    
+    print(f"kcal_data_list: {kcal_data_list}")
+    return jsonify(kcal_data_list)
+
 @app.route('/login', methods=['GET','POST'])
 def login():
     """Handle user login"""
@@ -337,8 +381,90 @@ def log_meal(user_id):
     man_form = ManualMealInputForm()
     pic_form = MealPhotoForm()
     if man_form.is_submitted and man_form.validate():
+        meal = Kcal_in(
+            user_id = user_id,
+            meal_nm = man_form.meal_name.data,
+            meal_lbl = man_form.meal_lbl.data,
+            meal_date = man_form.meal_date.data,
+            carb = man_form.carbs.data,
+            protein = man_form.protein.data,
+            fat = man_form.fat.data,
+            kcal = man_form.total_kcal.data
+        )
+        db.session.add(meal)
+        try:
+            db.session.commit()
+            flash("Meal logged", "success")
+        except Exception as e:
+            db.session.rollback()
+            flash(f"An error occurred: {e}", "danger")
+            return render_template('logmeal.html', man_form=man_form, pic_form = pic_form)
         return redirect("/")
     # elif pic_form.is_submitted and pic_form.validate():
-
+    elif pic_form.is_submitted and pic_form.validate():
+        try:
+            db.session.commit()
+            flash("Meal logged", "success")
+        except Exception as e:
+            db.session.rollback()
+            flash(f"An error occurred: {e}", "danger")
+            return render_template('logmeal.html', man_form=man_form, pic_form = pic_form)
+        return redirect("/")
     else:
         return render_template('logmeal.html', man_form=man_form, pic_form=pic_form)
+    
+@app.route('/users/<int:user_id>/activity', methods=['GET','POST'])
+def log_activity(user_id):
+    form = ManualActivityInputForm()
+    activities = Activity.query.with_entities(Activity.activity_nm).order_by(Activity.activity_nm).all()
+    form.activity_nm.choices = [(activity.activity_nm, activity.activity_nm) for activity in activities]
+    
+    #checks to see whether bmr has been recorded for the day for the current user 
+    auto_record = Kcal_out.query.filter(
+        Kcal_out.is_auto == True,
+        Kcal_out.user_id == user_id,
+        Kcal_out.activity_date >= datetime.utcnow().date(),
+        Kcal_out.activity_date < datetime.utcnow().date() + timedelta(days=1)
+    ).first()
+    
+    if not auto_record:
+        user_bmr = User_Weight.query.filter_by(
+            user_id = user_id
+        ).order_by(User_Weight.wt_dt.desc()).first().bmr
+
+        auto_activity = Kcal_out(
+            user_id=user_id,
+            activity_id=None,  # Assuming this is optional or has a default
+            activity_date=datetime.utcnow(),
+            kcal_out=user_bmr,
+            duration=None,  # Or any default value you prefer
+            is_auto=True,
+        )
+        db.session.add(auto_activity)
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            flash(f"An error occurred: {e}", "danger")
+            return render_template('logactivity.html', form=form)
+
+    if form.is_submitted and form.validate():
+        activity = Kcal_out(
+            user_id = user_id,
+            activity_id = Activity.query.filter_by(activity_nm = form.activity_nm.data).first().id, #query for the id of the selected activity,
+            activity_date = form.activity_date.data,
+            kcal_out = form.kcal_out.data,
+            duration = form.duration.data,
+            is_auto = False,
+        )
+        db.session.add(activity)
+        try:
+            db.session.commit()
+            flash("Meal logged", "success")
+        except Exception as e:
+            db.session.rollback()
+            flash(f"An error occurred: {e}", "danger")
+            return render_template('logactivity.html', form=form)
+        return redirect("/")
+    else:
+        return render_template('logactivity.html', form=form)

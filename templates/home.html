@@ -4,20 +4,24 @@
     <div class="row justify-content-md-center">
         <h1>Today's Stats</h1>
         <div class="col-md-4 border">
-            <p>Today's Calories IN</p>
+            <p>Today's kcal intake:</p>
+            <b class=".text-primary">{{today_kcal_in}}</b>
         </div>
         <div class="col-md-4 border">
-            <p>Today's Calories OUT</p>
+            <p>Today's kcal output:</p>
+            <b class=".text-primary">{{today_kcal_out}}</b>
         </div>
     </div>
     <div class="row justify-content-md-center">
         <div id="kcal-in-out-container" class="chart-container border mt-3">
-            <p>kcal IN vs. kcal OUT chart</p>
+            <div id="kcal-chart"></div>
         </div>
         <div id="wt-history-container" class="chart-container border mt-3">
-            <p>user weight history chart</p>
+            <div id="wt-chart"></div>
+            
         </div>
         <!-- calorie in vs out chart -->
         <!-- weight history chart -->
     </div>
+<script src = "{{ url_for('static',filename='chart.js')}}"></script>
 {% endblock %}
