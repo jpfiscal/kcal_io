@@ -1,5 +1,5 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField, PasswordField, DateField, SelectField, DecimalField, IntegerField, FileField
+from wtforms import StringField, PasswordField, DateField, SelectField, DecimalField, IntegerField, FileField, HiddenField
 from wtforms.validators import DataRequired, Email, Length, NumberRange, ValidationError, Optional
 from flask_wtf.file import FileField, FileAllowed
 from datetime import datetime
@@ -50,14 +50,14 @@ class ManualMealInputForm(FlaskForm):
     carbs = DecimalField('Carbs (g)', places=2, rounding=None, use_locale=False, validators=[Optional()])
     fat = DecimalField('Fat (g)', places=2, rounding=None, use_locale=False, validators=[Optional()])
     protein = DecimalField('Protein (g)', places=2, rounding=None, use_locale=False, validators=[Optional()])
+    form_type = HiddenField(default='manual')
 
 class MealPhotoForm(FlaskForm):
     """Form used to manually input user's meals"""
-
     meal_photo = FileField('Meal Photo', validators=[FileAllowed(['jpg','png','HEIC'], 'Images only'), DataRequired()])
     meal_date = DateField('Date', validators=[DataRequired()], default=datetime.utcnow())
     meal_lbl = SelectField('Meal', choices=['Breakfast', 'Lunch', 'Dinner', 'Morning Snack', 'Afternoon Snack', 'Evening Snack'], validators=[DataRequired()])
-    # weight = DecimalField('Weight (in grams)', places=2, rounding=None, use_locale=False)
+    form_type = HiddenField(default='photo')
 
 class EditMealEstimateForm(FlaskForm):
     """Once GPT4 returns the kcal and macronutrient estiamte, users can edit the returned data"""

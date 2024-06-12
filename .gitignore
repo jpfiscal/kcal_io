@@ -1,2 +1,4 @@
+.env
 venv
+openai-test.py
 __pycache__

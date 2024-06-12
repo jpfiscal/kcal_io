@@ -22,9 +22,9 @@
 </div>
 <div class="row justify-content-md-center">
     <div class="col-md-7 col-lg-5"> 
-      <form method="POST" id="meal-pic-ip-form">
+      <form method="POST" id="meal-pic-ip-form" enctype="multipart/form-data">
         {{ pic_form.hidden_tag() }}
-
+        <i>Photo upload only takes one of the following file formats: jpg, png</i>
         {% for field in pic_form if field.widget.input_type != 'hidden' %}
           <!-- {% if request.method == 'POST' and field.errors %} -->
             {% for error in field.errors %}
@@ -41,4 +41,31 @@
       </form>
     </div>
 </div>
+<div class="row justify-content-md-center">
+    <div class="col-md-9 col-lg-5">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                <th>Meal Date</th>
+                <th>Meal</th>
+                <th>Name</th>
+                <th>Total Calories</th>
+                <th>Delete?</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for meal in meal_list %}
+                    <tr id="meal-{{meal.id}}">
+                        <td>{{meal.meal_date.date()}}</td>
+                        <td>{{meal.meal_lbl}}</td>
+                        <td>{{meal.meal_nm}}</td>
+                        <td>{{meal.kcal}}</td>
+                        <td><i id="dlt_{{meal.id}}" data-id="{{meal.id}}" class="fas fa-trash delete-meal"></i></td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+<script src="{{ url_for('static', filename='logmeal.js') }}"></script>
 {% endblock %}

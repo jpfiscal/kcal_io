@@ -2,3 +2,22 @@
     height: 50px;
     width: 50px;
 }
+.grid line {
+    stroke: lightgrey;
+    stroke-opacity: 0.7;
+    shape-rendering: crispEdges;
+}
+
+.grid path {
+    stroke-width: 0;
+}
+
+.delete-activity:hover {
+    color: red;
+    cursor: pointer;
+}
+
+.delete-meal:hover {
+    color: red;
+    cursor: pointer;
+}

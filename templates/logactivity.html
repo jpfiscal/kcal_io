@@ -18,6 +18,36 @@
 
         <button class="btn btn-primary btn-block btn-lg">Log Activity</button>
       </form>
+      <form action="/">
+        <input type="submit" value="Return" class="btn btn-secondary"></input>
+      </form>
     </div>
 </div>
+<div class="row justify-content-md-center">
+    <div class="col-md-9 col-lg-5">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                <th>Log Date</th>
+                <th>Calories Burnt</th>
+                <th>Activity</th>
+                <th>Auto Log?</th>
+                <th>Delete?</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for activity in activities %}
+                    <tr id="activity-{{activity.id}}">
+                        <td>{{activity.activity_date.date()}}</td>
+                        <td>{{activity.kcal_out}}</td>
+                        <td>{{activity.activity_nm}}</td>
+                        <td>{{activity.is_auto}}</td>
+                        <td><i id="dlt_{{activity.id}}" data-id="{{activity.id}}" class="fas fa-trash delete-activity"></i></td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+<script src="{{ url_for('static', filename='logactivity.js') }}"></script>
 {% endblock %}

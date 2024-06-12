@@ -3,14 +3,20 @@ import os
 from flask import Flask, render_template, request, flash, redirect, session, g, jsonify
 from flask_debugtoolbar import DebugToolbarExtension
 from flask_migrate import Migrate
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import aliased
+from utils import generate_auth_code
+from werkzeug.utils import secure_filename
 import base64
 import hashlib
 import requests
+import json
 from datetime import datetime, timedelta
 
 from forms import UserAddForm, LoginForm, UserDetailsForm, BodyWeightForm, ManualMealInputForm, MealPhotoForm, ManualActivityInputForm
 from models import db, connect_db, User, User_Weight, FitBit, Kcal_in, Kcal_out, Activity
+from utils import get_kcal_in_est
 
 CURR_USER_KEY = "curr_user"
 
@@ -30,6 +36,7 @@ migrate = Migrate(app,db)
 app.config['DEBUG_TB_INTERCEPT_REDIRECTS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY',"k4ch1_su1TMatchaW8CH")
 app.config['DEBUG'] = True
+app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'upload_imgs')
 
 toolbar = DebugToolbarExtension(app)
 
@@ -61,8 +68,55 @@ def homepage():
     """
 
     if g.user:
+        #display updated kcal in and out sums for the current day
         today_kcal_out = Kcal_out.get_today_kcal_out_total(g.user.id)
         today_kcal_in = Kcal_in.get_today_kcal_in_total(g.user.id)
+
+        #check user's token is within 2 hours of being expired..if so, refresh token and update fitbit_account record
+        token_expiry = FitBit.query.filter_by(user_id = g.user.id).first().expiry_dt
+        if(datetime.utcnow() >= (token_expiry - timedelta(hours=2))):
+            print("REFRESHING TOKENS")
+            FitBit.get_refresh_token(g.user.id)
+
+        #TEST: fitbit GET call
+        # activity_data = FitBit.get_user_activity(g.user.id, datetime.utcnow().date().strftime("%Y-%m-%d"))
+        # print(f"get_user_data: {activity_data}")
+        # print(f"calories out: {activity_data['summary']['caloriesOut']}")
+
+        #check to see if any auto kcal_out records have been recorded for the current day
+        #ONLY IF the current user has an active fitbit user account linked to their kcalio account
+        fitbit_account = FitBit.query.filter_by(user_id = g.user.id).first()
+
+        if fitbit_account:
+            kcal_out_auto = Kcal_out.query.filter(
+                Kcal_out.user_id == g.user.id,
+                Kcal_out.activity_date >= datetime.utcnow().date(),
+                Kcal_out.activity_date < datetime.utcnow().date() + timedelta(days=1),
+                Kcal_out.is_auto == True
+            ).first()
+
+            #if there is an "auto" record in the db for the current user and date,
+            #then update the existing auto record with the updated kcal_out data from Fitbit
+            activity_data = FitBit.get_user_activity(g.user.id, datetime.utcnow().date().strftime("%Y-%m-%d"))
+            if kcal_out_auto:
+                kcal_out_auto.kcal_out = activity_data['summary']['caloriesOut']
+            #if there is not already an "auto" record in the db for the current user and date,
+            #then write a new record with today's current reading on fitbit calories out
+            else:
+                activity_data = FitBit.get_user_activity(g.user.id, datetime.utcnow().date().strftime("%Y-%m-%d"))
+                kcal_out_bmr = Kcal_out(
+                    user_id = g.user.id,
+                    activity_date = datetime.utcnow().date(),
+                    kcal_out = activity_data['summary']['caloriesOut'],
+                    is_auto = True
+                )
+                db.session.add(kcal_out_bmr)
+            try:
+                db.session.commit()
+            except IntegrityError as e:
+                db.session.rollback()
+                flash("An error occurred while updating kcal out records. Please try again", "danger")
+
         return render_template(
             'home.html', 
             today_kcal_in = today_kcal_in, 
@@ -85,20 +139,47 @@ def kcalSummaryData():
     """Pull and prepare KCAL IN vs. KCAL OUT history data for the user's home 
     screen's multi-bar graph"""
     user_id = g.user.id
-    kcal_data = db.session.query(Kcal_out.kcal_out,
-                                Kcal_out.activity_date,
-                                Kcal_in.kcal, 
-                                Kcal_in.meal_date).join(Kcal_in).filter(
-                                    Kcal_in.meal_date == Kcal_out.activity_date).filter_byA(
-                                        user_id = user_id).order_by(Kcal_out.activity_date.asc()).all()
 
-    print(f"kcal_data: {kcal_data}")
-    kcal_data_list = [{'kcal_in': float(kcal),
-                        'kcal_out': float(kcal_out),
-                        'meal_dt': meal_dt.strftime("%Y-%m-%d"), 
-                        'activity_dt' : activity_dt.strftime("%Y-%m-%d")} for kcal_out, activity_dt, kcal, meal_dt in kcal_data]
+    KcalOutAlias = aliased(Kcal_out)
+    KcalInAlias = aliased(Kcal_in)
+
+    # Left join from Kcal_out to Kcal_in
+    query1 = db.session.query(
+        KcalOutAlias.activity_date.label('date'),
+        func.sum(KcalOutAlias.kcal_out).label('total_kcal_out'),
+        func.sum(KcalInAlias.kcal).label('total_kcal_in')
+    ).outerjoin(
+        KcalInAlias,
+        KcalOutAlias.activity_date == KcalInAlias.meal_date
+    ).filter(
+        KcalOutAlias.user_id == user_id
+    ).group_by(
+        KcalOutAlias.activity_date
+    )
+
+    # Left join from Kcal_in to Kcal_out
+    query2 = db.session.query(
+        KcalInAlias.meal_date.label('date'),
+        func.sum(KcalOutAlias.kcal_out).label('total_kcal_out'),
+        func.sum(KcalInAlias.kcal).label('total_kcal_in')
+    ).outerjoin(
+        KcalOutAlias,
+        KcalInAlias.meal_date == KcalOutAlias.activity_date
+    ).filter(
+        KcalInAlias.user_id == user_id
+    ).group_by(
+        KcalInAlias.meal_date
+    )
+
+    # Union the two queries
+    kcal_data = query1.union(query2).order_by('date').all()
+
+    kcal_data_list = [{
+        'date': date.strftime("%Y-%m-%d"),
+        'kcal_in': float(kcal) if kcal is not None else 0,
+        'kcal_out': float(kcal_out) if kcal_out is not None else 0
+    } for date, kcal_out, kcal in kcal_data]
     
-    print(f"kcal_data_list: {kcal_data_list}")
     return jsonify(kcal_data_list)
 
 @app.route('/login', methods=['GET','POST'])
@@ -309,12 +390,12 @@ def linkFitBitCallback(user_id):
 
     return render_template('linkFitbit_callback.html', user=user, fitbit_account=fitbit_account)
 
-def generate_auth_code(client_id, client_secret):
-    auth_string = f"{client_id}:{client_secret}"
-    auth_bytes = auth_string.encode('ascii')
-    base64_bytes = base64.b64encode(auth_bytes)
-    base64_string = base64_bytes.decode('ascii')
-    return f"Basic {base64_string}"
+# def generate_auth_code(client_id, client_secret):
+#     auth_string = f"{client_id}:{client_secret}"
+#     auth_bytes = auth_string.encode('ascii')
+#     base64_bytes = base64.b64encode(auth_bytes)
+#     base64_string = base64_bytes.decode('ascii')
+#     return f"Basic {base64_string}"
 
 def generate_code_verifier(length=128):
     """Generate cryptographic random string between 43 and 128 characters"""
@@ -380,7 +461,7 @@ def log_weight(user_id):
 def log_meal(user_id):
     man_form = ManualMealInputForm()
     pic_form = MealPhotoForm()
-    if man_form.is_submitted and man_form.validate():
+    if request.form.get('form_type') == 'manual' and man_form.is_submitted and man_form.validate():
         meal = Kcal_in(
             user_id = user_id,
             meal_nm = man_form.meal_name.data,
@@ -401,24 +482,90 @@ def log_meal(user_id):
             return render_template('logmeal.html', man_form=man_form, pic_form = pic_form)
         return redirect("/")
     # elif pic_form.is_submitted and pic_form.validate():
-    elif pic_form.is_submitted and pic_form.validate():
-        try:
-            db.session.commit()
-            flash("Meal logged", "success")
-        except Exception as e:
-            db.session.rollback()
-            flash(f"An error occurred: {e}", "danger")
-            return render_template('logmeal.html', man_form=man_form, pic_form = pic_form)
+    elif request.form.get('form_type') == 'photo' and pic_form.is_submitted and pic_form.validate():
+        f = pic_form.meal_photo.data
+        if f:
+            filename = secure_filename(f.filename)
+            unique_filename = str(datetime.utcnow().timestamp()) + "_" + filename
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+            f.save(filepath)
+            #call function that uses ChatGPT API to recognize food in uploaded photo
+            kcal_in_est = get_kcal_in_est(filepath)
+            print(f"kcal_in_est: {kcal_in_est}")
+            if kcal_in_est == "No food was recognized from the image you provided.":
+                flash(kcal_in_est,"danger")
+                #delete the file that was uploaded
+                os.remove(filepath)
+            else:
+                #Save record to kcal_in including filename
+                try:
+                    kcal_in_est_json = json.loads(kcal_in_est)
+                    print(f"kcal_in_est_json:{kcal_in_est_json}")
+                    print(f"food name:{kcal_in_est_json['name']}")
+                    meal = Kcal_in(
+                        user_id = user_id,
+                        meal_nm = kcal_in_est_json["name"],
+                        meal_lbl = pic_form.meal_lbl.data,
+                        meal_date = pic_form.meal_date.data,
+                        carb = kcal_in_est_json["carbs"],
+                        protein = kcal_in_est_json["protein"],
+                        fat = kcal_in_est_json["fat"],
+                        kcal = kcal_in_est_json["calories"],
+                        ref_filename = unique_filename
+                    )
+                    db.session.add(meal)
+                    try:
+                        db.session.commit()
+                        flash(f"\"{kcal_in_est_json['name']}\" logged", "success")
+                    except Exception as e:
+                        db.session.rollback()
+                        flash(f"An error occurred: {e}", "danger")
+                        return render_template('logmeal.html', man_form=man_form, pic_form = pic_form)
+                    return redirect(f"/users/{user_id}/meals")
+                except json.JSONDecodeError:
+                    flash("Failed to parse response from API", "danger")
+                    os.remove(filepath)
+                    return render_template('logmeal.html', man_form = man_form, pic_form = pic_form)
         return redirect("/")
     else:
-        return render_template('logmeal.html', man_form=man_form, pic_form=pic_form)
-    
+        meals = db.session.query(
+            Kcal_in.id,
+            Kcal_in.meal_date,
+            Kcal_in.meal_lbl,
+            Kcal_in.meal_nm,
+            Kcal_in.kcal
+        ).filter(
+            Kcal_in.user_id == user_id
+        ).order_by(
+            Kcal_in.meal_date.desc()
+        ).limit(20).all()
+        return render_template('logmeal.html', man_form=man_form, pic_form=pic_form, meal_list = meals)
+
+@app.route('/delete_meal/<int:meal_id>', methods=['POST'])
+def delete_meal(meal_id):
+    """delete selected meal entry by their id"""
+    meal = Kcal_in.query.get_or_404(meal_id)
+    db.session.delete(meal)
+    try:
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)})
+
 @app.route('/users/<int:user_id>/activity', methods=['GET','POST'])
 def log_activity(user_id):
     form = ManualActivityInputForm()
     activities = Activity.query.with_entities(Activity.activity_nm).order_by(Activity.activity_nm).all()
     form.activity_nm.choices = [(activity.activity_nm, activity.activity_nm) for activity in activities]
     
+    #If the user is linked to a Fitbit account, create a flash messages warning users that FitBit is already providing 
+    #calorie expenditure data and anything added here would be in addition to what FitBit captures
+    fitbit_account = FitBit.query.filter_by(user_id = user_id).first()
+
+    if fitbit_account:
+        flash('Your account is linked to a FitBit account which is already providing calorie expenditure data. Anything logged here will be in addition to what FitBit is able to capture.','warning')
+
     #checks to see whether bmr has been recorded for the day for the current user 
     auto_record = Kcal_out.query.filter(
         Kcal_out.is_auto == True,
@@ -467,4 +614,28 @@ def log_activity(user_id):
             return render_template('logactivity.html', form=form)
         return redirect("/")
     else:
-        return render_template('logactivity.html', form=form)
+        activities = db.session.query(
+            Kcal_out.id,
+            Kcal_out.activity_date,
+            Kcal_out.kcal_out,
+            Activity.activity_nm,
+            Kcal_out.is_auto
+        ).outerjoin(Activity,Kcal_out.activity_id == Activity.id).filter(
+            Kcal_out.user_id == user_id
+        ).order_by(
+            Kcal_out.activity_date.desc()
+        ).limit(20).all()
+        print(activities)
+        return render_template('logactivity.html', form=form, activities = activities)
+    
+@app.route('/delete_activity/<int:activity_id>', methods=['POST'])
+def delete_activity(activity_id):
+    """delete selected activity entry by their id"""
+    meal = Kcal_out.query.get_or_404(activity_id)
+    db.session.delete(meal)
+    try:
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)})

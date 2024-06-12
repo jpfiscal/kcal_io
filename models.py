@@ -2,8 +2,10 @@ from flask_bcrypt import Bcrypt
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func
 from decimal import Decimal
-
 from datetime import datetime, timedelta
+from utils import generate_auth_code
+
+import requests
 
 bcrypt = Bcrypt()
 db = SQLAlchemy()
@@ -285,7 +287,61 @@ class FitBit(db.Model):
 
     fitbits = db.relationship('User')
 
-    
+    @staticmethod
+    def get_refresh_token(user_id):
+        client_id = "23RZYC"
+        client_secret = "4bc7d9b86bed62e973998936393a6b37"
+        fitbit_account = FitBit.query.filter_by(user_id = user_id).first()
+        url = "https://api.fitbit.com/oauth2/token"
+        headers = {
+            "Authorization": generate_auth_code(client_id=client_id, client_secret=client_secret),
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        print(f"auth code: {generate_auth_code(client_id=client_id, client_secret=client_secret)}")
+        print(f"current refresh token: {fitbit_account.refresh_token}")
+        data = {
+            "grant_type":"refresh_token",
+            "client_id": client_id,
+            "refresh_token": fitbit_account.refresh_token
+        }
+        response = requests.post(url, headers=headers, data=data).json()
+        print(f"response: {response}")
+        
+        if 'access_token' in response:
+            fitbit_account.token = response['access_token']
+            fitbit_account.refresh_token = response['refresh_token']
+            fitbit_account.expiry_dt = datetime.utcnow() + timedelta(seconds = response['expires_in'])
+            try:
+                db.session.commit()
+                print("FitBit Account updated with new tokens")
+            except Exception as e:
+                print(f"Unexpected error: {e}")
+                db.session.rollback()
+            print(f"New token: {fitbit_account.token} vs. {response['access_token']}")
+            print(f"New refresh token: {fitbit_account.refresh_token} vs. {response['refresh_token']}")
+            print(f"New expiry date: {fitbit_account.expiry_dt} vs. {response['expires_in']}")
+        else:
+            print("FitBit Account Record Not Found")
+
+        return response
+
+    @staticmethod
+    def get_user_activity(user_id, date):
+        fitbit_account = FitBit.query.filter_by(user_id = user_id).first()
+        print(f"current date: {date}")
+        url = f"https://api.fitbit.com/1/user/-/activities/date/{date}.json"
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {fitbit_account.token}"
+        }
+        response = requests.get(url, headers=headers)
+
+        if response.status_code == 200:
+            data = response.json()
+            return data
+        else:
+            print("Failed to retrieve data:", response.status_code)
+            return None
 
 class Kcal_in(db.Model):
     """Records all meals or Calories that the users put INto their body"""
@@ -342,6 +398,11 @@ class Kcal_in(db.Model):
         nullable=False
     )
 
+    ref_filename = db.Column(
+        db.Text,
+        nullable = True
+    )
+
     create_dt = db.Column(
         db.DateTime,
         nullable=False,
@@ -365,10 +426,8 @@ class Kcal_in(db.Model):
             Kcal_in.meal_date >= today,
             Kcal_in.meal_date < today + timedelta(days=1)
         ).scalar()
-        print(f"today: {today}")
-        print(f"+ 1 day: {today + timedelta(days=1)}")
-        print(f"total_kcal_in: {total_kcal_in}")
         return total_kcal_in or 0
+
 
 class Kcal_out(db.Model):
     """Records all activies or Calories that the users burnt OUT of their body"""
@@ -396,7 +455,7 @@ class Kcal_out(db.Model):
     )
 
     kcal_out = db.Column(
-        db.Numeric(6,2),
+        db.Numeric(7,2),
         nullable=False
     )
 
