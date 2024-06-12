@@ -21,3 +21,8 @@
     color: red;
     cursor: pointer;
 }
+
+.delete-wt:hover{
+    color: red;
+    cursor: pointer;
+}

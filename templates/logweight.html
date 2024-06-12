@@ -22,5 +22,31 @@
         <input type="submit" value="Return" class="btn btn-secondary"></input>
       </form>
     </div>
-  </div>
+</div>
+<div class="row justify-content-md-center">
+    <div class="col-md-9 col-lg-5">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Log Date</th>
+                    <th>Weight (kg)</th>
+                    <th>Body Fat %</th>
+                    <th>BMR</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for wt in wts %}
+                    <tr id="wt-{{wt.id}}">
+                        <td>{{wt.wt_dt.date()}}</td>
+                        <td>{{wt.wt}}</td>
+                        <td>{{wt.fat_perc}}</td>
+                        <td>{{wt.bmr}}</td>
+                        <td><i id="dlt_{{wt.id}}" data-id="{{wt.id}}" class="fas fa-trash delete-wt"></i></td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+<script src="{{ url_for('static', filename='logwt.js') }}"></script>
 {% endblock %}

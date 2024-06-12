@@ -44,7 +44,7 @@
             {% else %}
             <li>
               <a href="/users/{{ g.user.id }}">
-                <img src="{{ g.user.image_url }}" alt="{{ g.user.username }}">
+                {{ g.user.username }}
               </a>
             </li>
             <li><a href="/users/{{g.user.id}}/meals">Log Meal</a></li>

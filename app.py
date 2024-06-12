@@ -455,7 +455,30 @@ def log_weight(user_id):
             return render_template('log_weight.html', form=form)
         return redirect("/")
     else:
-        return render_template('logweight.html', form=form)
+        wts = db.session.query(
+            User_Weight.id,
+            User_Weight.wt_dt,
+            User_Weight.wt,
+            User_Weight.fat_perc,
+            User_Weight.bmr
+        ).filter(
+            User_Weight.user_id == user_id
+        ).order_by(
+            User_Weight.wt_dt.desc()
+        ).limit(20).all()
+        return render_template('logweight.html', form=form, wts=wts)
+
+@app.route('/delete_wt/<int:wt_id>', methods=['POST'])
+def delete_wt(wt_id):
+    """delete selected meal entry by their id"""
+    wt = User_Weight.query.get_or_404(wt_id)
+    db.session.delete(wt)
+    try:
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}) 
 
 @app.route('/users/<int:user_id>/meals', methods=['GET','POST'])
 def log_meal(user_id):
