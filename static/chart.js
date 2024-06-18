@@ -8,8 +8,6 @@ function createWtHistoryGraph(data, containerId) {
 
     const parseTime = d3.timeParse("%Y-%m-%d");
     
-    
-    
     data.forEach(d => {
         d.wt_dt = parseTime(d.wt_dt);
         d.wt = +d.wt;
@@ -139,7 +137,7 @@ function createKcalGraph(data, containerId){
     .attr("y", d => y(d.kcal_in))
     .attr("width", x.bandwidth() / 2)
     .attr("height", d => height -margin.top - margin.bottom - y(d.kcal_in))
-    .attr("fill", "green");
+    .attr("fill", "rgba(0, 0, 204, 0.7)");
 
     svg.selectAll(".bar-out")
         .data(data)
@@ -150,7 +148,7 @@ function createKcalGraph(data, containerId){
         .attr("y", d => y(d.kcal_out))
         .attr("width", x.bandwidth() / 2)
         .attr("height", d => height - margin.top - margin.bottom - y(d.kcal_out))
-        .attr("fill", "red");
+        .attr("fill", "rgba(255,0,0,0.7");
 
     svg.append("g")
     .attr("transform", `translate(0,${height - margin.top - margin.bottom})`)
@@ -184,7 +182,7 @@ function createKcalGraph(data, containerId){
         .attr("y", 0)
         .attr("width", 18)
         .attr("height", 18)
-        .attr("fill", "green");
+        .attr("fill", "rgba(0, 0, 204, 0.7)");
 
     legend.append("text")
         .attr("x", 24)
@@ -198,7 +196,7 @@ function createKcalGraph(data, containerId){
         .attr("y", 24)
         .attr("width", 18)
         .attr("height", 18)
-        .attr("fill", "red");
+        .attr("fill", "rgba(255,0,0,0.7");
 
     legend.append("text")
         .attr("x", 24)

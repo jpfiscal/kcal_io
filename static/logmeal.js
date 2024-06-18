@@ -21,4 +21,23 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+    
+    const spinner = document.getElementById('spinner');
+
+    const showSpinner = () => {
+        spinner.style.display = 'block';
+    };
+
+    const hideSpinner = () => {
+        spinner.style.display = 'none';
+    };
+
+    const forms = document.querySelectorAll('form');
+
+    forms.forEach(form => {
+        form.addEventListener('submit', function () {
+            showSpinner();
+        });
+    });
 });
+

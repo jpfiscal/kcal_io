@@ -75,13 +75,7 @@ def homepage():
         #check user's token is within 2 hours of being expired..if so, refresh token and update fitbit_account record
         token_expiry = FitBit.query.filter_by(user_id = g.user.id).first().expiry_dt
         if(datetime.utcnow() >= (token_expiry - timedelta(hours=2))):
-            print("REFRESHING TOKENS")
             FitBit.get_refresh_token(g.user.id)
-
-        #TEST: fitbit GET call
-        # activity_data = FitBit.get_user_activity(g.user.id, datetime.utcnow().date().strftime("%Y-%m-%d"))
-        # print(f"get_user_data: {activity_data}")
-        # print(f"calories out: {activity_data['summary']['caloriesOut']}")
 
         #check to see if any auto kcal_out records have been recorded for the current day
         #ONLY IF the current user has an active fitbit user account linked to their kcalio account
@@ -211,13 +205,9 @@ def logout():
 @app.route('/signup', methods=['GET','POST'])
 def signup():
     """Allow new users to create an account"""
-    print("Signup route hit")
     form = UserAddForm()
-    print(f"submitted? {form.validate_on_submit()}")
-    if form.validate() != True:
-        print(f"Form errors: {form.errors}")
+    
     if form.is_submitted and form.validate():
-        print("Form submitted successfully")
         try:
             user = User.signup(
                 username=form.username.data,
@@ -232,21 +222,16 @@ def signup():
         #     return render_template('signup.html', form=form)
         
         except IntegrityError as e:
-            print(f"IntegrityError: {e}")
             db.session.rollback()
             flash("Username or email is already being used by an existing account", 'danger')
         except Exception as e:
-            print(f"Unexpected error: {e}")
             db.session.rollback()  # Ensure rollback on any exception
             flash("An unexpected error occurred. Please try again.", 'danger')
 
         do_login(user)
-
         return redirect(f"/users/{user.id}/usersetup")
     
     else:
-        if form.errors:
-            print(f"Form errors: {form.errors}")
         return render_template('signup.html', form=form)
 
 @app.route('/users/<int:user_id>', methods=['GET','POST'])
@@ -329,7 +314,6 @@ def linkFitBit(user_id):
             db.session.rollback()
             flash(f"An error occurred: {e}", "danger")
         url = f"https://www.fitbit.com/oauth2/authorize?response_type=code&client_id={client_id}&scope=activity+cardio_fitness+electrocardiogram+heartrate+location+nutrition+oxygen_saturation+profile+respiratory_rate+settings+sleep+social+temperature+weight&code_challenge={code_challenge}&code_challenge_method=S256&state={state}"
-    print(f"url: {url}")
     return render_template('linkFitbit.html', user=user, url=url)
 
 @app.route('/users/<int:user_id>/linkFitbit/callback', methods=['GET','POST'])
@@ -514,7 +498,6 @@ def log_meal(user_id):
             f.save(filepath)
             #call function that uses ChatGPT API to recognize food in uploaded photo
             kcal_in_est = get_kcal_in_est(filepath)
-            print(f"kcal_in_est: {kcal_in_est}")
             if kcal_in_est == "No food was recognized from the image you provided.":
                 flash(kcal_in_est,"danger")
                 #delete the file that was uploaded
@@ -523,8 +506,6 @@ def log_meal(user_id):
                 #Save record to kcal_in including filename
                 try:
                     kcal_in_est_json = json.loads(kcal_in_est)
-                    print(f"kcal_in_est_json:{kcal_in_est_json}")
-                    print(f"food name:{kcal_in_est_json['name']}")
                     meal = Kcal_in(
                         user_id = user_id,
                         meal_nm = kcal_in_est_json["name"],
@@ -648,7 +629,6 @@ def log_activity(user_id):
         ).order_by(
             Kcal_out.activity_date.desc()
         ).limit(20).all()
-        print(activities)
         return render_template('logactivity.html', form=form, activities = activities)
     
 @app.route('/delete_activity/<int:activity_id>', methods=['POST'])

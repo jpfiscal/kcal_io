@@ -57,16 +57,7 @@ def get_kcal_in_est(image_path):
     "max_tokens": 300
     }
 
-    # response = openai.images.generate(
-    #   prompt="A cute baby sea otter",
-    #   n=2,
-    #   size="1024x1024"
-    # )
     response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
     response_data = response.json()
     content = response_data['choices'][0]['message']['content']
     return content
-    # print(f"kcal:{}")
-    # print(f"protein:{}")
-    # print(f"fat:{}")
-    # print(f"carbs:{}")

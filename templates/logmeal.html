@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% block content %}
+
 <div class="row justify-content-md-center">
     <div class="col-md-7 col-lg-5">
       <h2 class="join-message">Log Meal</h2>
@@ -8,11 +9,9 @@
         {{ man_form.hidden_tag() }}
 
         {% for field in man_form if field.widget.input_type != 'hidden' %}
-          <!-- {% if request.method == 'POST' and field.errors %} -->
             {% for error in field.errors %}
                 <span class="text-danger">{{ error }}</span>
             {% endfor %}
-          <!-- {% endif %} -->
           {{ field(placeholder=field.label.text, class="form-control") }}
         {% endfor %}
 
@@ -26,11 +25,9 @@
         {{ pic_form.hidden_tag() }}
         <i>Photo upload only takes one of the following file formats: jpg, png</i>
         {% for field in pic_form if field.widget.input_type != 'hidden' %}
-          <!-- {% if request.method == 'POST' and field.errors %} -->
             {% for error in field.errors %}
                 <span class="text-danger">{{ error }}</span>
             {% endfor %}
-          <!-- {% endif %} -->
           {{ field(placeholder=field.label.text, class="form-control") }}
         {% endfor %}
 
@@ -66,5 +63,11 @@
         </table>
     </div>
 </div>
+
+<!-- Spinner -->
+<div id="spinner" class="spinner-border text-primary" style="display: none;" role="status">
+  <span class="visually-hidden">Loading...</span>
+</div>
+
 <script src="{{ url_for('static', filename='logmeal.js') }}"></script>
 {% endblock %}

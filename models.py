@@ -165,55 +165,6 @@ class User_Weight(db.Model):
             return 10 * weight + 6.25 * height - 5 * age - 161
         return 0
 
-# class Goal_Weight(db.Model):
-#     """Stores historical weight of a user"""
-#     __tablename__ = 'goal_wt'
-
-#     id = db.Column(
-#         db.Integer,
-#         primary_key=True
-#     )
-
-#     user_id = db.Column(
-#         db.Integer,
-#         db.ForeignKey('users.id', ondelete='cascade')
-#     )
-
-#     goal_wt = db.Column(
-#         db.Numeric(4,2),
-#         nullable = False
-#     )
-
-#     goal_fat_perc = db.Column(
-#         db.Numeric(3,2),
-#         nullable = True
-#     )
-
-#     goal_set_dt = db.Column(
-#         db.DateTime,
-#         nullable=True,
-#         default = datetime.utcnow()
-#     )
-
-#     goal_dt = db.Column(
-#         db.DateTime,
-#         nullable=True
-#     )
-
-#     create_dt = db.Column(
-#         db.DateTime,
-#         nullable=False,
-#         default=datetime.utcnow()
-#     )
-
-#     updated_at = db.Column(
-#         db.DateTime,
-#         nullable=True,
-#         onupdate=datetime.utcnow()
-#     )
-
-#     goals = db.relationship('User')
-
 class FitBit(db.Model):
     """Stores users FitBit Account Details"""
     __tablename__ = 'fitbit_account'
@@ -313,22 +264,14 @@ class FitBit(db.Model):
             fitbit_account.expiry_dt = datetime.utcnow() + timedelta(seconds = response['expires_in'])
             try:
                 db.session.commit()
-                print("FitBit Account updated with new tokens")
             except Exception as e:
-                print(f"Unexpected error: {e}")
                 db.session.rollback()
-            print(f"New token: {fitbit_account.token} vs. {response['access_token']}")
-            print(f"New refresh token: {fitbit_account.refresh_token} vs. {response['refresh_token']}")
-            print(f"New expiry date: {fitbit_account.expiry_dt} vs. {response['expires_in']}")
-        else:
-            print("FitBit Account Record Not Found")
 
         return response
 
     @staticmethod
     def get_user_activity(user_id, date):
         fitbit_account = FitBit.query.filter_by(user_id = user_id).first()
-        print(f"current date: {date}")
         url = f"https://api.fitbit.com/1/user/-/activities/date/{date}.json"
         headers = {
             "Accept": "application/json",
@@ -340,7 +283,6 @@ class FitBit(db.Model):
             data = response.json()
             return data
         else:
-            print("Failed to retrieve data:", response.status_code)
             return None
 
 class Kcal_in(db.Model):

@@ -3,8 +3,6 @@ from wtforms import StringField, PasswordField, DateField, SelectField, DecimalF
 from wtforms.validators import DataRequired, Email, Length, NumberRange, ValidationError, Optional
 from flask_wtf.file import FileField, FileAllowed
 from datetime import datetime
-from models import Activity
-
 
 class LoginForm(FlaskForm):
     """Login Form"""
@@ -33,19 +31,12 @@ class UserDetailsForm(FlaskForm):
     height = DecimalField('Height in cm', places=2,rounding=None,use_locale=False, validators=[DataRequired()])
     fat_perc = DecimalField('Fat Percentage', places=2,rounding=None,use_locale=False, validators=[NumberRange(min=0, max=100, message = 'Value must be between 0%% and 100%%')])
 
-# class WeightGoalsForm(FlaskForm):
-#     """Input User's weight and fat percentage goals"""
-
-#     goal_weight = DecimalField('Goal Weight in Kg', places=2,rounding=None,use_locale=False, validators=[DataRequired()])
-#     goal_fat_perc = DecimalField('Fat Percentage', places=2,rounding=None,use_locale=False, validators=[NumberRange(min=0, max=100, message = 'Value must be between 0%% and 100%%')])
-
 class ManualMealInputForm(FlaskForm):
     """Form used to manually input user's meals"""
 
     meal_name = StringField('Meal Name', validators=[DataRequired()])
     meal_date = DateField('Date', validators=[DataRequired()], default=datetime.utcnow())
     meal_lbl = SelectField('Meal', choices=['Breakfast', 'Lunch', 'Dinner', 'Morning Snack', 'Afternoon Snack', 'Evening Snack'], validators=[DataRequired()])
-    # weight = DecimalField('Weight (in grams)', places=2, rounding=None, use_locale=False, validators=[Optional()])
     total_kcal = IntegerField('Total kCal in meal', validators=[DataRequired()])
     carbs = DecimalField('Carbs (g)', places=2, rounding=None, use_locale=False, validators=[Optional()])
     fat = DecimalField('Fat (g)', places=2, rounding=None, use_locale=False, validators=[Optional()])

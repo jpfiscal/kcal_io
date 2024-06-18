@@ -1,27 +1,35 @@
 {% extends 'base.html' %}
 
 {% block content %}
-    <div class="row justify-content-md-center">
-        <h1>Today's Stats</h1>
-        <div class="col-md-4 border">
-            <p>Today's kcal intake:</p>
-            <b class=".text-primary">{{today_kcal_in}}</b>
+    <div id="home-title-row" class="row">
+        <h1 class="align-self-flex-start">Today's Stats</h1>
+    </div>
+    <div id="today-stats-row" class="row">
+        <div class="col-md-4 d-flex justify-content-center">
+            <div class="card border border-1">
+                <div class="card-body">
+                    <h4 class="card-title">Today's kcal intake:</h4>
+                    <p class="card-text card-metric">{{today_kcal_in}}</p>
+                </div>
+            </div>
         </div>
-        <div class="col-md-4 border">
-            <p>Today's kcal output:</p>
-            <b class=".text-primary">{{today_kcal_out}}</b>
+        <div class="col-md-4 d-flex justify-content-center">
+            <div class="card border border-1">
+                <div class="card-body justify-content-center">
+                    <h4 class="card-title">Today's kcal output:</h4>
+                    <p class="card-text card-metric">{{today_kcal_out}}</p>
+                </div>
+            </div>
         </div>
     </div>
-    <div class="row justify-content-md-center">
-        <div id="kcal-in-out-container" class="chart-container border mt-3">
-            <div id="kcal-chart"></div>
+    <div id="chart-row" class="row d-flex justify-content-center align-items-center">
+        <div id="kcal-in-out-container" class="chart-container border mt-3 col-md-10 d-flex justify-content-center align-items-center">
+            <div class="w-100 col-md-10" id="kcal-chart"></div>
         </div>
-        <div id="wt-history-container" class="chart-container border mt-3">
-            <div id="wt-chart"></div>
+        <div id="wt-history-container" class="chart-container border mt-3 col-md-10 d-flex justify-content-center align-items-center">
+            <div class="w-100 col-md-10" id="wt-chart"></div>
             
         </div>
-        <!-- calorie in vs out chart -->
-        <!-- weight history chart -->
     </div>
 <script src = "{{ url_for('static',filename='chart.js')}}"></script>
 {% endblock %}

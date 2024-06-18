@@ -1,9 +1,19 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="row justify-content-md-center">
+<div id="landing-container" class="row justify-content-md-center">
     <div class="col-md-7 col-lg-5">
-      <h2 class="join-message">Login</h2>
-
+      <img src="static/images/man-running.jpg">
+    </div>
+    <div class="col-md-7 col-lg-5">
+      <div id="form-header">
+        <div id="form-header-text">
+          <h2 class="join-message">Login</h2>
+        </div>
+        <div id="form-header-logo">
+          <img id="login-logo" src="static/images/logo.jpeg">
+        </div>
+        <div id="form-header-spacer"></div>
+      </div>
       <form method="POST" id="login_form">
         {{ form.hidden_tag() }}
 
@@ -14,9 +24,9 @@
           {{ field(placeholder=field.label.text, class="form-control") }}
         {% endfor %}
 
-        <button class="btn btn-primary btn-block btn-lg">Log in</button>
+        <button class="btn btn-primary btn-block btn-lg mt-1">Log in</button>
       </form>
-      <a href="/signup" class="btn btn-primary btn-block btn-lg">Sign Up</a>
+      <a href="/signup" class="btn btn-primary btn-block btn-lg m-1">Sign Up</a>
     </div>
   </div>
 {% endblock %}
