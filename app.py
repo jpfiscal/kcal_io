@@ -11,7 +11,6 @@ from services.openAi_service import generate_auth_code, get_kcal_in_est
 from services.auth_service import do_login, do_logout
 from services.fitbit_service import refresh_fitbit_token, get_fitbit_auto_kcal_out, generate_code_verifier, generate_code_challenge, request_token, genFitBitURL
 from services.d3_service import wtHistoryData, kcalSummaryData
-from utils import rm_activity
 # import base64
 # import hashlib
 # import requests
@@ -295,7 +294,6 @@ def log_weight(user_id):
             return render_template('log_weight.html', form=form)
         return redirect("/")
     else:
-        #Populate grid view at bottom of page
         wts = db.session.query(
             User_Weight.id,
             User_Weight.wt_dt,
@@ -392,7 +390,6 @@ def log_meal(user_id):
                     return render_template('logmeal.html', man_form = man_form, pic_form = pic_form)
         return redirect("/")
     else:
-        #populate grid view at bottom of page
         meals = db.session.query(
             Kcal_in.id,
             Kcal_in.meal_date,
@@ -495,12 +492,11 @@ def log_activity(user_id):
 @app.route('/delete_activity/<int:activity_id>', methods=['POST'])
 def delete_activity(activity_id):
     """delete selected activity entry by their id"""
-    rm_resp = rm_activity(activity_id)
-    if (rm_resp):
-        flash("successfully deleted activity", "success")
+    meal = Kcal_out.query.get_or_404(activity_id)
+    db.session.delete(meal)
+    try:
+        db.session.commit()
         return jsonify({'success': True})
-    else:
-        flash(f"Error occurred while attempting to delete actvity", "danger")
-        return jsonify({'success': False, 'error': str(rm_resp)})
-    
-    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)})

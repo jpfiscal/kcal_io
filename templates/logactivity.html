@@ -49,10 +49,4 @@
     </div>
 </div>
 <script src="{{ url_for('static', filename='logactivity.js') }}"></script>
-<script>
-  if (window.location.href.indexOf('time=') > -1) {
-      window.location.reload(true); // true forces the browser to reload from the server, not cache
-  }
-</script>
-
 {% endblock %}
