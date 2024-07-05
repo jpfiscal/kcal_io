@@ -6,17 +6,20 @@ from flask_migrate import Migrate
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import aliased
-from utils import generate_auth_code
 from werkzeug.utils import secure_filename
-import base64
-import hashlib
-import requests
+from services.openAi_service import generate_auth_code, get_kcal_in_est
+from services.auth_service import do_login, do_logout
+from services.fitbit_service import refresh_fitbit_token, get_fitbit_auto_kcal_out, generate_code_verifier, generate_code_challenge, request_token, genFitBitURL
+from services.d3_service import wtHistoryData, kcalSummaryData
+# import base64
+# import hashlib
+# import requests
 import json
 from datetime import datetime, timedelta
 
 from forms import UserAddForm, LoginForm, UserDetailsForm, BodyWeightForm, ManualMealInputForm, MealPhotoForm, ManualActivityInputForm
 from models import db, connect_db, User, User_Weight, FitBit, Kcal_in, Kcal_out, Activity
-from utils import get_kcal_in_est
+
 
 CURR_USER_KEY = "curr_user"
 
@@ -72,44 +75,10 @@ def homepage():
         today_kcal_out = Kcal_out.get_today_kcal_out_total(g.user.id)
         today_kcal_in = Kcal_in.get_today_kcal_in_total(g.user.id)
 
-        #check user's token is within 2 hours of being expired..if so, refresh token and update fitbit_account record
-        token_expiry = FitBit.query.filter_by(user_id = g.user.id).first().expiry_dt
-        if(datetime.utcnow() >= (token_expiry - timedelta(hours=2))):
-            FitBit.get_refresh_token(g.user.id)
-
-        #check to see if any auto kcal_out records have been recorded for the current day
-        #ONLY IF the current user has an active fitbit user account linked to their kcalio account
-        fitbit_account = FitBit.query.filter_by(user_id = g.user.id).first()
-
-        if fitbit_account:
-            kcal_out_auto = Kcal_out.query.filter(
-                Kcal_out.user_id == g.user.id,
-                Kcal_out.activity_date >= datetime.utcnow().date(),
-                Kcal_out.activity_date < datetime.utcnow().date() + timedelta(days=1),
-                Kcal_out.is_auto == True
-            ).first()
-
-            #if there is an "auto" record in the db for the current user and date,
-            #then update the existing auto record with the updated kcal_out data from Fitbit
-            activity_data = FitBit.get_user_activity(g.user.id, datetime.utcnow().date().strftime("%Y-%m-%d"))
-            if kcal_out_auto:
-                kcal_out_auto.kcal_out = activity_data['summary']['caloriesOut']
-            #if there is not already an "auto" record in the db for the current user and date,
-            #then write a new record with today's current reading on fitbit calories out
-            else:
-                activity_data = FitBit.get_user_activity(g.user.id, datetime.utcnow().date().strftime("%Y-%m-%d"))
-                kcal_out_bmr = Kcal_out(
-                    user_id = g.user.id,
-                    activity_date = datetime.utcnow().date(),
-                    kcal_out = activity_data['summary']['caloriesOut'],
-                    is_auto = True
-                )
-                db.session.add(kcal_out_bmr)
-            try:
-                db.session.commit()
-            except IntegrityError as e:
-                db.session.rollback()
-                flash("An error occurred while updating kcal out records. Please try again", "danger")
+        #check and refresh fitbit token if it's close to expiry
+        refresh_fitbit_token(g.user.id)
+        #obtain fitbit's total kcal out data for the day
+        get_fitbit_auto_kcal_out(g.user.id)
 
         return render_template(
             'home.html', 
@@ -119,67 +88,16 @@ def homepage():
         return redirect('/login')
     
 @app.route('/wtHistoryData')
-def wtHistoryData():
-    """Pull and prepare weight history data for the user's home screen's line graph"""
-    user_id = g.user.id
-    wt_data = db.session.query(User_Weight.wt, User_Weight.wt_dt).filter_by(
-        user_id=user_id
-    ).order_by(User_Weight.wt_dt.asc()).all()
-    wt_data_list = [{'wt': float(wt), 'wt_dt': wt_dt.strftime("%Y-%m-%d")} for wt, wt_dt in wt_data]
-    return jsonify(wt_data_list)
+def display_wtHistoryData():
+    return wtHistoryData(g.user.id)
 
 @app.route('/kcalSummaryData')
-def kcalSummaryData():
-    """Pull and prepare KCAL IN vs. KCAL OUT history data for the user's home 
-    screen's multi-bar graph"""
-    user_id = g.user.id
-
-    KcalOutAlias = aliased(Kcal_out)
-    KcalInAlias = aliased(Kcal_in)
-
-    # Left join from Kcal_out to Kcal_in
-    query1 = db.session.query(
-        KcalOutAlias.activity_date.label('date'),
-        func.sum(KcalOutAlias.kcal_out).label('total_kcal_out'),
-        func.sum(KcalInAlias.kcal).label('total_kcal_in')
-    ).outerjoin(
-        KcalInAlias,
-        KcalOutAlias.activity_date == KcalInAlias.meal_date
-    ).filter(
-        KcalOutAlias.user_id == user_id
-    ).group_by(
-        KcalOutAlias.activity_date
-    )
-
-    # Left join from Kcal_in to Kcal_out
-    query2 = db.session.query(
-        KcalInAlias.meal_date.label('date'),
-        func.sum(KcalOutAlias.kcal_out).label('total_kcal_out'),
-        func.sum(KcalInAlias.kcal).label('total_kcal_in')
-    ).outerjoin(
-        KcalOutAlias,
-        KcalInAlias.meal_date == KcalOutAlias.activity_date
-    ).filter(
-        KcalInAlias.user_id == user_id
-    ).group_by(
-        KcalInAlias.meal_date
-    )
-
-    # Union the two queries
-    kcal_data = query1.union(query2).order_by('date').all()
-
-    kcal_data_list = [{
-        'date': date.strftime("%Y-%m-%d"),
-        'kcal_in': float(kcal) if kcal is not None else 0,
-        'kcal_out': float(kcal_out) if kcal_out is not None else 0
-    } for date, kcal_out, kcal in kcal_data]
-    
-    return jsonify(kcal_data_list)
+def display_kcalSummaryData():
+    return kcalSummaryData(g.user.id)
 
 @app.route('/login', methods=['GET','POST'])
 def login():
     """Handle user login"""
-
     form = LoginForm()
 
     if form.validate_on_submit():
@@ -197,7 +115,6 @@ def login():
 @app.route('/logout', methods=['GET'])
 def logout():
     """Handle log out of user"""
-
     do_logout()
     flash(f"You have been successfully logged out.", "success")
     return redirect('/login')
@@ -213,19 +130,14 @@ def signup():
                 username=form.username.data,
                 email=form.email.data,
                 password=form.password.data
-                # ,password = form.password_retype.data
             )
             db.session.commit()
-
-        # except IntegrityError:
-        #     flash("Username or email is already being used by an existing account", 'danger')
-        #     return render_template('signup.html', form=form)
         
         except IntegrityError as e:
             db.session.rollback()
             flash("Username or email is already being used by an existing account", 'danger')
         except Exception as e:
-            db.session.rollback()  # Ensure rollback on any exception
+            db.session.rollback()
             flash("An unexpected error occurred. Please try again.", 'danger')
 
         do_login(user)
@@ -286,35 +198,10 @@ def setup(user_id):
     
 @app.route('/users/<int:user_id>/linkFitbit', methods=['GET','POST'])
 def linkFitBit(user_id):
-    """Give users the option to link their FitBit account"""
     user = User.query.get(user_id)
-    client_id = '23RZYC'
-    # client_secret = '4bc7d9b86bed62e973998936393a6b37'
-    code_verifier = generate_code_verifier(43)
-    code_challenge = generate_code_challenge(code_verifier)
-    state = generate_code_verifier(32)
-
-    fitbit_account = FitBit.query.filter_by(user_id=user_id).first()
-
-    #save generated codes to db
-    if fitbit_account:
-        url = f"https://www.fitbit.com/oauth2/authorize?response_type=code&client_id={client_id}&scope=activity+cardio_fitness+electrocardiogram+heartrate+location+nutrition+oxygen_saturation+profile+respiratory_rate+settings+sleep+social+temperature+weight&code_challenge={fitbit_account.pkce_code_challenge}&code_challenge_method=S256&state={fitbit_account.state}"
-    else:
-        fitbit_account = FitBit(
-            user_id = user_id,
-            pkce_code_verifier = code_verifier,
-            pkce_code_challenge = code_challenge,
-            state = state
-        )
-        db.session.add(fitbit_account)
-        try:
-            db.session.commit()
-            flash("Fitbit account linked successfully", "success")
-        except Exception as e:
-            db.session.rollback()
-            flash(f"An error occurred: {e}", "danger")
-        url = f"https://www.fitbit.com/oauth2/authorize?response_type=code&client_id={client_id}&scope=activity+cardio_fitness+electrocardiogram+heartrate+location+nutrition+oxygen_saturation+profile+respiratory_rate+settings+sleep+social+temperature+weight&code_challenge={code_challenge}&code_challenge_method=S256&state={state}"
+    url = genFitBitURL(user_id)
     return render_template('linkFitbit.html', user=user, url=url)
+
 
 @app.route('/users/<int:user_id>/linkFitbit/callback', methods=['GET','POST'])
 def linkFitBitCallback(user_id):
@@ -373,38 +260,6 @@ def linkFitBitCallback(user_id):
         flash(f"An error occurred: {e}", "danger")
 
     return render_template('linkFitbit_callback.html', user=user, fitbit_account=fitbit_account)
-
-# def generate_auth_code(client_id, client_secret):
-#     auth_string = f"{client_id}:{client_secret}"
-#     auth_bytes = auth_string.encode('ascii')
-#     base64_bytes = base64.b64encode(auth_bytes)
-#     base64_string = base64_bytes.decode('ascii')
-#     return f"Basic {base64_string}"
-
-def generate_code_verifier(length=128):
-    """Generate cryptographic random string between 43 and 128 characters"""
-    verifier = base64.urlsafe_b64encode(os.urandom(length)).rstrip(b'=').decode('ascii')
-    return verifier
-
-def generate_code_challenge(verfier):
-    """Generate a code challenge from the code verifier"""
-    challenge = base64.urlsafe_b64encode(hashlib.sha256(verfier.encode('ascii')).digest()).rstrip(b'=').decode('ascii')
-    return challenge
-
-def request_token(client_id, auth_code, callback_code, code_verifier):
-    url = "https://api.fitbit.com/oauth2/token"
-    headers = {
-        "Authorization": auth_code,
-        "Content-Type": 'application/x-www-form-urlencoded'
-    }
-    data = {
-        "client_id": client_id,
-        "grant_type": "authorization_code",
-        "code": callback_code,
-        "code_verifier": code_verifier
-    }
-    response = requests.post(url, headers=headers, data=data)
-    return response.json()
 
 @app.route('/users/<int:user_id>/weight', methods=['GET','POST'])
 def log_weight(user_id):
@@ -468,6 +323,8 @@ def delete_wt(wt_id):
 def log_meal(user_id):
     man_form = ManualMealInputForm()
     pic_form = MealPhotoForm()
+
+    # IF REQUEST IS SUBMITTED FROM THE MANUAL UPLOAD FORM
     if request.form.get('form_type') == 'manual' and man_form.is_submitted and man_form.validate():
         meal = Kcal_in(
             user_id = user_id,
@@ -488,7 +345,8 @@ def log_meal(user_id):
             flash(f"An error occurred: {e}", "danger")
             return render_template('logmeal.html', man_form=man_form, pic_form = pic_form)
         return redirect("/")
-    # elif pic_form.is_submitted and pic_form.validate():
+    
+    # IF REQUEST IS SUBMITTED FROM PHOTO UPLOAD FORM
     elif request.form.get('form_type') == 'photo' and pic_form.is_submitted and pic_form.validate():
         f = pic_form.meal_photo.data
         if f:

@@ -3,7 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func
 from decimal import Decimal
 from datetime import datetime, timedelta
-from utils import generate_auth_code
+from services.openAi_service import generate_auth_code
 
 import requests
 
