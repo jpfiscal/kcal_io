@@ -101,7 +101,7 @@ def genFitBitURL(user_id):
         db.session.add(fitbit_account)
         try:
             db.session.commit()
-            flash("Fitbit account linked successfully", "success")
+            # flash("Fitbit account linked successfully", "success")
         except Exception as e:
             db.session.rollback()
             flash(f"An error occurred: {e}", "danger")

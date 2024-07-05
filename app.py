@@ -1,19 +1,16 @@
 import os
 
 from flask import Flask, render_template, request, flash, redirect, session, g, jsonify
-from flask_debugtoolbar import DebugToolbarExtension
+# from flask_debugtoolbar import DebugToolbarExtension
 from flask_migrate import Migrate
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import aliased
 from werkzeug.utils import secure_filename
 from services.openAi_service import generate_auth_code, get_kcal_in_est
-from services.auth_service import do_login, do_logout
+from services.op_service import do_login, do_logout
 from services.fitbit_service import refresh_fitbit_token, get_fitbit_auto_kcal_out, generate_code_verifier, generate_code_challenge, request_token, genFitBitURL
 from services.d3_service import wtHistoryData, kcalSummaryData
-# import base64
-# import hashlib
-# import requests
 import json
 from datetime import datetime, timedelta
 
@@ -41,7 +38,7 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY',"k4ch1_su1TMatchaW8CH")
 app.config['DEBUG'] = True
 app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'upload_imgs')
 
-toolbar = DebugToolbarExtension(app)
+# toolbar = DebugToolbarExtension(app)
 
 connect_db(app)
 
@@ -55,17 +52,9 @@ def add_user_to_g():
     else:
         g.user = None
 
-def do_login(user):
-    session[CURR_USER_KEY] = user.id
-
-def do_logout():
-    if CURR_USER_KEY in session:
-        del session[CURR_USER_KEY]
-
 @app.route('/')
 def homepage():
     """Show homepage
-    
     - if logged in, show home dashboard screen
     - if not logged in, go to login screen
     """
@@ -75,10 +64,12 @@ def homepage():
         today_kcal_out = Kcal_out.get_today_kcal_out_total(g.user.id)
         today_kcal_in = Kcal_in.get_today_kcal_in_total(g.user.id)
 
-        #check and refresh fitbit token if it's close to expiry
-        refresh_fitbit_token(g.user.id)
-        #obtain fitbit's total kcal out data for the day
-        get_fitbit_auto_kcal_out(g.user.id)
+        fitbit_account = FitBit.query.filter_by(user_id = g.user.id).first()
+        if fitbit_account.token != None:
+            #check and refresh fitbit token if it's close to expiry
+            refresh_fitbit_token(g.user.id)
+            #obtain fitbit's total kcal out data for the day
+            get_fitbit_auto_kcal_out(g.user.id)
 
         return render_template(
             'home.html', 
@@ -105,7 +96,7 @@ def login():
                                  form.password.data)
         
         if user:
-            do_login(user)
+            do_login(user, CURR_USER_KEY)
             flash(f"Hello, {user.username}!", "success")
             return redirect("/")
         
@@ -115,7 +106,7 @@ def login():
 @app.route('/logout', methods=['GET'])
 def logout():
     """Handle log out of user"""
-    do_logout()
+    do_logout(CURR_USER_KEY)
     flash(f"You have been successfully logged out.", "success")
     return redirect('/login')
 
@@ -140,7 +131,7 @@ def signup():
             db.session.rollback()
             flash("An unexpected error occurred. Please try again.", 'danger')
 
-        do_login(user)
+        do_login(user, CURR_USER_KEY)
         return redirect(f"/users/{user.id}/usersetup")
     
     else:
@@ -161,13 +152,14 @@ def setup(user_id):
     #pre-populate the form with existing user data and most recent weight data
     if (user.gender != None):
         latest_wt = User_Weight.query.filter_by(user_id=user_id).order_by(User_Weight.wt_dt.desc()).first()
-        form.birthdate.data = user.birth_dt
-        form.gender.data = user.gender
-        form.weight.data = latest_wt.wt
-        form.height.data = user.height
-        form.fat_perc.data = latest_wt.fat_perc
+        if not form.is_submitted():
+            form.birthdate.data = user.birth_dt
+            form.gender.data = user.gender
+            form.weight.data = latest_wt.wt
+            form.height.data = user.height
+            form.fat_perc.data = latest_wt.fat_perc
     
-    if form.is_submitted and form.validate():
+    if form.validate_on_submit(): #form.is_submitted and form.validate():
         
         if user:
             user.birth_dt = form.birthdate.data
@@ -180,9 +172,8 @@ def setup(user_id):
                 fat_perc = form.fat_perc.data,
                 bmr = User_Weight.calculate_bmr(user.gender, form.weight.data, user.height, form.birthdate.data)
             )
-
+            db.session.add(user_weight)
             try:
-                db.session.add(user_weight)
                 db.session.commit()
                 return redirect(f"/users/{g.user.id}/linkFitbit")
             except IntegrityError as e:
@@ -294,6 +285,7 @@ def log_weight(user_id):
             return render_template('log_weight.html', form=form)
         return redirect("/")
     else:
+        #Populate grid view at bottom of page
         wts = db.session.query(
             User_Weight.id,
             User_Weight.wt_dt,
@@ -390,6 +382,7 @@ def log_meal(user_id):
                     return render_template('logmeal.html', man_form = man_form, pic_form = pic_form)
         return redirect("/")
     else:
+        #populate grid view at bottom of page
         meals = db.session.query(
             Kcal_in.id,
             Kcal_in.meal_date,
@@ -437,25 +430,28 @@ def log_activity(user_id):
     ).first()
     
     if not auto_record:
-        user_bmr = User_Weight.query.filter_by(
+        user_wt = User_Weight.query.filter_by(
             user_id = user_id
-        ).order_by(User_Weight.wt_dt.desc()).first().bmr
+        ).order_by(User_Weight.wt_dt.desc()).first()
 
-        auto_activity = Kcal_out(
-            user_id=user_id,
-            activity_id=None,  # Assuming this is optional or has a default
-            activity_date=datetime.utcnow(),
-            kcal_out=user_bmr,
-            duration=None,  # Or any default value you prefer
-            is_auto=True,
-        )
-        db.session.add(auto_activity)
-        try:
-            db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            flash(f"An error occurred: {e}", "danger")
-            return render_template('logactivity.html', form=form)
+        if (user_wt):
+            user_bmr = user_wt.bmr
+
+            auto_activity = Kcal_out(
+                user_id=user_id,
+                activity_id=None,  # Assuming this is optional or has a default
+                activity_date=datetime.utcnow(),
+                kcal_out=user_bmr,
+                duration=None,  # Or any default value you prefer
+                is_auto=True,
+            )
+            db.session.add(auto_activity)
+            try:
+                db.session.commit()
+            except Exception as e:
+                db.session.rollback()
+                flash(f"An error occurred: {e}", "danger")
+                return render_template('logactivity.html', form=form)
 
     if form.is_submitted and form.validate():
         activity = Kcal_out(
@@ -494,9 +490,12 @@ def delete_activity(activity_id):
     """delete selected activity entry by their id"""
     meal = Kcal_out.query.get_or_404(activity_id)
     db.session.delete(meal)
+
     try:
         db.session.commit()
+        flash("successfully deleted activity", "success")
         return jsonify({'success': True})
     except Exception as e:
         db.session.rollback()
+        flash(f"Error occurred while attempting to delete actvity", "danger")
         return jsonify({'success': False, 'error': str(e)})
