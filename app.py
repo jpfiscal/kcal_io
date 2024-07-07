@@ -2,6 +2,7 @@ import os
 
 from flask import Flask, render_template, request, flash, redirect, session, g, jsonify
 # from flask_debugtoolbar import DebugToolbarExtension
+from dotenv import load_dotenv
 from flask_migrate import Migrate
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
@@ -16,6 +17,7 @@ from datetime import datetime, timedelta
 from forms import UserAddForm, LoginForm, UserDetailsForm, BodyWeightForm, ManualMealInputForm, MealPhotoForm, ManualActivityInputForm
 from models import db, connect_db, User, User_Weight, FitBit, Kcal_in, Kcal_out, Activity
 
+load_dotenv()
 
 CURR_USER_KEY = "curr_user"
 
@@ -25,7 +27,7 @@ if __name__ == "__main__":
     app.run(debug=True)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = (
-    os.environ.get('DATABASE_URL', 'postgresql:///kcalio'))
+    os.environ.get('SUPABASE_DB_URL', 'postgresql:///kcalio'))
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ECHO'] = False
