@@ -1,7 +1,8 @@
-from flask import Flask, g, flash
+from flask import Flask, g, flash, redirect
 from sqlalchemy.exc import IntegrityError
 from models import db, FitBit, Kcal_out, User
 from datetime import datetime, timedelta
+from services.openAi_service import generate_auth_code
 
 import base64
 import os
@@ -109,3 +110,59 @@ def genFitBitURL(user_id):
     
     return url
     # return render_template('linkFitbit.html', user=user, url=url)
+
+def FitBitCallback(user_id, request):
+    """Obtain callback variables from Fitbit Auth URL"""
+    user = User.query.get(user_id)
+    client_id = "23RZYC"
+    client_secret = "4bc7d9b86bed62e973998936393a6b37"
+    code = request.args.get('code')
+    state = request.args.get('state')
+
+    if not code or not state:
+        flash("Missing code or state from Fitbit authorization", "danger")
+        return redirect("/users/<int:user_id>/linkFitbit", user_id = user_id)
+    
+    # Save the code and state to the database (assuming you have these fields in your FitBit model)
+    fitbit_account = FitBit.query.filter_by(user_id=user_id).first()
+
+    if fitbit_account:
+        fitbit_account.auth_code = generate_auth_code(client_id, client_secret)
+        fitbit_account.callback_code = code
+        fitbit_account.state = state
+    else:
+        fitbit_account = FitBit(
+            user_id = user_id,
+            auth_code = generate_auth_code(client_id, client_secret),
+            callback_code = code,
+            state = state
+        )
+        db.session.add(fitbit_account)
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        flash(f"An error occurred: {e}", "danger")
+
+    # Request token and refresh token
+    token_response = request_token(client_id, fitbit_account.auth_code, fitbit_account.callback_code, fitbit_account.pkce_code_verifier)
+    print(f"token response: {token_response}")
+    
+    # Check for errors in the response
+    if "errors" in token_response:
+        flash(f"Error obtaining token: {token_response['errors'][0]['message']}", "danger")
+        print(f"redirect: /users/{user_id}/linkFitbit")
+        return redirect(f"/users/{user_id}/linkFitbit")
+    
+    #store token details in database
+    fitbit_account.token = token_response.get("access_token")
+    fitbit_account.refresh_token = token_response.get("refresh_token")
+    fitbit_account.expiry_dt = datetime.utcnow() + timedelta(seconds=token_response.get("expires_in"))
+    fitbit_account.fitbit_user_id = token_response.get("user_id")
+
+    try:
+        db.session.commit()
+        flash("Fitbit account linked and token obtained successfully", "success")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"An error occurred: {e}", "danger")

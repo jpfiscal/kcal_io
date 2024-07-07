@@ -5,11 +5,10 @@ from flask import Flask, render_template, request, flash, redirect, session, g, 
 from flask_migrate import Migrate
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import aliased
 from werkzeug.utils import secure_filename
-from services.openAi_service import generate_auth_code, get_kcal_in_est
+from services.openAi_service import get_kcal_in_est
 from services.op_service import do_login, do_logout
-from services.fitbit_service import refresh_fitbit_token, get_fitbit_auto_kcal_out, generate_code_verifier, generate_code_challenge, request_token, genFitBitURL
+from services.fitbit_service import refresh_fitbit_token, get_fitbit_auto_kcal_out, genFitBitURL, FitBitCallback
 from services.d3_service import wtHistoryData, kcalSummaryData
 import json
 from datetime import datetime, timedelta
@@ -194,62 +193,13 @@ def linkFitBit(user_id):
     return render_template('linkFitbit.html', user=user, url=url)
 
 
-@app.route('/users/<int:user_id>/linkFitbit/callback', methods=['GET','POST'])
-def linkFitBitCallback(user_id):
+@app.route('/users/linkFitbit/callback', methods=['GET','POST'])
+def linkFitBitCallback():
     """Obtain callback variables from Fitbit Auth URL"""
+    user_id = g.user.id
+    FitBitCallback(user_id, request)
     user = User.query.get(user_id)
-    client_id = "23RZYC"
-    client_secret = "4bc7d9b86bed62e973998936393a6b37"
-    code = request.args.get('code')
-    state = request.args.get('state')
-
-    if not code or not state:
-        flash("Missing code or state from Fitbit authorization", "danger")
-        return redirect("/users/<int:user_id>/linkFitbit", user_id = user_id)
-    
-    # Save the code and state to the database (assuming you have these fields in your FitBit model)
-    fitbit_account = FitBit.query.filter_by(user_id=user_id).first()
-
-    if fitbit_account:
-        fitbit_account.auth_code = generate_auth_code(client_id, client_secret)
-        fitbit_account.callback_code = code
-        fitbit_account.state = state
-    else:
-        fitbit_account = FitBit(
-            user_id = user_id,
-            auth_code = generate_auth_code(client_id, client_secret),
-            callback_code = code,
-            state = state
-        )
-        db.session.add(fitbit_account)
-    try:
-        db.session.commit()
-    except Exception as e:
-        db.session.rollback()
-        flash(f"An error occurred: {e}", "danger")
-
-    # Request token and refresh token
-    token_response = request_token(client_id, fitbit_account.auth_code, fitbit_account.callback_code, fitbit_account.pkce_code_verifier)
-    print(token_response)
-    
-    # Check for errors in the response
-    if "error" in token_response:
-        flash(f"Error obtaining token: {token_response['error_description']}", "danger")
-        return redirect('/users/<int:user_id>/linkFitbit', user_id=user_id)
-    
-    #store token details in database
-    fitbit_account.token = token_response.get("access_token")
-    fitbit_account.refresh_token = token_response.get("refresh_token")
-    fitbit_account.expiry_dt = datetime.utcnow() + timedelta(seconds=token_response.get("expires_in"))
-    fitbit_account.fitbit_user_id = token_response.get("user_id")
-
-    try:
-        db.session.commit()
-        flash("Fitbit account linked and token obtained successfully", "success")
-    except Exception as e:
-        db.session.rollback()
-        flash(f"An error occurred: {e}", "danger")
-
+    fitbit_account = FitBit.query.filter_by(user_id = user_id).first()
     return render_template('linkFitbit_callback.html', user=user, fitbit_account=fitbit_account)
 
 @app.route('/users/<int:user_id>/weight', methods=['GET','POST'])
@@ -418,7 +368,7 @@ def log_activity(user_id):
     #calorie expenditure data and anything added here would be in addition to what FitBit captures
     fitbit_account = FitBit.query.filter_by(user_id = user_id).first()
 
-    if fitbit_account:
+    if fitbit_account.fitbit_user_id != None:
         flash('Your account is linked to a FitBit account which is already providing calorie expenditure data. Anything logged here will be in addition to what FitBit is able to capture.','warning')
 
     #checks to see whether bmr has been recorded for the day for the current user 
@@ -439,7 +389,7 @@ def log_activity(user_id):
 
             auto_activity = Kcal_out(
                 user_id=user_id,
-                activity_id=None,  # Assuming this is optional or has a default
+                activity_id=Activity.query.filter(Activity.activity_nm == 'BMR').first().id, 
                 activity_date=datetime.utcnow(),
                 kcal_out=user_bmr,
                 duration=None,  # Or any default value you prefer
